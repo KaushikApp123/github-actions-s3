@@ -43,22 +43,9 @@ jobs:
             --bucket "$BUCKET_NAME" \
             --website-configuration '{"IndexDocument":{"Suffix":"index.html"}}'
             
-          # Apply the public read bucket policy dynamically
-          POLICY_JSON=$(cat <<EOF
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Sid": "PublicReadGetObject",
-            "Effect": "Allow",
-            "Principal": "*",
-            "Action": "s3:GetObject",
-            "Resource": "arn:aws:s3:::$BUCKET_NAME/*"
-        }
-    ]
-}
-EOF
-          )
+          # Apply the public read bucket policy dynamically using a clean inline string
+          POLICY_JSON="{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"PublicReadGetObject\",\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":\"s3:GetObject\",\"Resource\":\"arn:aws:s3:::$BUCKET_NAME/*\"}]}"
+          
           aws s3api put-bucket-policy --bucket "$BUCKET_NAME" --policy "$POLICY_JSON"
         else
           echo "Bucket $BUCKET_NAME already exists. Skipping creation."
