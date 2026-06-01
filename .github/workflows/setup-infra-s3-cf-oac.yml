@@ -1,16 +1,16 @@
 name: Secure Infrastructure Setup (S3 + CloudFront OAC)
 
 on:
-  workflow_dispatch: # Allows manual execution from the GitHub Actions UI
+  workflow_dispatch:
   push:
     branches:
-      - main # Added push trigger to automatically register it in the sidebar on push
+      - main
 
 jobs:
   infrastructure:
     runs-on: ubuntu-latest
     env:
-      BUCKET_NAME: ${{ secrets.AWS_CF_S3_BUCKET_NAME }}
+      BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
       AWS_REGION: us-east-1 # Change to your preferred region
 
     steps:
@@ -45,7 +45,7 @@ jobs:
         
         if [ "$OAC_ID" == "None" ] || [ -z "$OAC_ID" ]; then
           echo "Creating Origin Access Control (OAC)..."
-          OAC_CONFIG='{"Name":"'"$OAC_NAME"'","Description":"Secure S3 OAC","SigningProtocol":"sigv4","SigningBehavior":"always","OriginAccessControlFileType":"s3"}'
+          OAC_CONFIG="{\"Name\":\"$OAC_NAME\",\"Description\":\"Secure S3 OAC\",\"SigningProtocol\":\"sigv4\",\"SigningBehavior\":\"always\",\"OriginAccessControlFileType\":\"s3\"}"
           OAC_ID=$(aws cloudfront create-origin-access-control --origin-access-control-config "$OAC_CONFIG" --query "OriginAccessControl.Id" --output text)
         fi
         
@@ -66,7 +66,18 @@ jobs:
           echo "Creating CloudFront Distribution..."
           CALLER_REF=$(date +%s)
           
-          CONFIG_JSON=$(cat  $GITHUB_OUTPUT
+          # Built cleanly on a single inline string to bypass multi-line YAML parsing traps
+          CONFIG_JSON="{\"CallerReference\":\"$CALLER_REF\",\"Comment\":\"Production CDN for $BUCKET_NAME\",\"Enabled\":true,\"DefaultRootObject\":\"index.html\",\"Origins\":{\"Quantity\":1,\"Items\":[{\"Id\":\"S3-Private-Origin\",\"DomainName\":\"$S3_REST_DOMAIN\",\"OriginAccessControlId\":\"$OAC_ID\",\"S3OriginConfig\":{\"OriginAccessIdentity\":\"\"}}]},\"DefaultCacheBehavior\":{\"TargetOriginId\":\"S3-Private-Origin\",\"ViewerProtocolPolicy\":\"redirect-to-https\",\"TrustedSigners\":{\"Enabled\":false,\"Quantity\":0},\"ForwardedValues\":{\"QueryString\":false,\"Cookies\":{\"Forward\":\"none\"},\"Headers\":{\"Quantity\":0},\"QueryStringCacheKeys\":{\"Quantity\":0}},\"MinTTL\":0,\"DefaultTTL\":86400,\"MaxTTL\":31536000}}"
+          
+          NEW_DIST=$(aws cloudfront create-distribution --distribution-config "$CONFIG_JSON")
+          DIST_ID=$(echo "$NEW_DIST" | jq -r '.Distribution.Id')
+          CF_DOMAIN=$(echo "$NEW_DIST" | jq -r '.Distribution.DomainName')
+        else
+          echo "Distribution exists."
+          CF_DOMAIN=$(aws cloudfront get-distribution --id "$DIST_ID" --query "Distribution.DomainName" --output text)
+        fi
+        
+        echo "DIST_ID=$DIST_ID" >> $GITHUB_OUTPUT
         echo "CF_DOMAIN=$CF_DOMAIN" >> $GITHUB_OUTPUT
 
     # 4. Restrict S3 Bucket Policy to allow ONLY your specific CloudFront Distribution
@@ -75,28 +86,8 @@ jobs:
         DIST_ID="${{ steps.cdn.outputs.DIST_ID }}"
         AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
         
-        POLICY_JSON=$(cat <<EOF
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Sid": "AllowCloudFrontServicePrincipalReadOnly",
-            "Effect": "Allow",
-            "Principal": {
-                "Service": "://amazonaws.com"
-            },
-            "Action": "s3:GetObject",
-            "Resource": "arn:aws:s3:::$BUCKET_NAME/*",
-            "Condition": {
-                "StringEquals": {
-                    "AWS:SourceArn": "arn:aws:cloudfront::$AWS_ACCOUNT_ID:distribution/$DIST_ID"
-                }
-            }
-        }
-    ]
-}
-EOF
-        )
+        # Built as a safe inline string to protect the YAML structure
+        POLICY_JSON="{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"AllowCloudFrontServicePrincipalReadOnly\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"://amazonaws.com\"},\"Action\":\"s3:GetObject\",\"Resource\":\"arn:aws:s3:::$BUCKET_NAME/*\",\"Condition\":{\"StringEquals\":{\"AWS:SourceArn\":\"arn:aws:cloudfront::$AWS_ACCOUNT_ID:distribution/$DIST_ID\"}}}]}"
         
         aws s3api put-bucket-policy --bucket "$BUCKET_NAME" --policy "$POLICY_JSON"
         
