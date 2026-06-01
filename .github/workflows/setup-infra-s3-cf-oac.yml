@@ -2,12 +2,9 @@ name: Secure Infrastructure Setup (S3 + CloudFront OAC)
 
 on:
   workflow_dispatch: # Allows manual execution from the GitHub Actions UI
-
-on:
-  workflow_dispatch:
   push:
     branches:
-      - main
+      - main # Added push trigger to automatically register it in the sidebar on push
 
 jobs:
   infrastructure:
@@ -92,7 +89,7 @@ jobs:
             "Resource": "arn:aws:s3:::$BUCKET_NAME/*",
             "Condition": {
                 "StringEquals": {
-                    "AWS:SourceArn": "arn:aws:strip-tags:us-east-1:$AWS_ACCOUNT_ID:distribution/$DIST_ID"
+                    "AWS:SourceArn": "arn:aws:cloudfront::$AWS_ACCOUNT_ID:distribution/$DIST_ID"
                 }
             }
         }
@@ -101,7 +98,6 @@ jobs:
 EOF
         )
         
-        # Override the block temporarily to safely inject the secure policy
         aws s3api put-bucket-policy --bucket "$BUCKET_NAME" --policy "$POLICY_JSON"
         
         echo "=========================================================="
