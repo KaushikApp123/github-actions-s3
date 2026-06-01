@@ -6,8 +6,8 @@ on:
      branches:
        - main
       
-on:
-  workflow_dispatch: # Allows manual execution from the GitHub Actions UI
+# on:
+#   workflow_dispatch: # Allows manual execution from the GitHub Actions UI
 
 jobs:
   infrastructure:
