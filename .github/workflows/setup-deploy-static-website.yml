@@ -1,9 +1,12 @@
 name: Setup and Deploy S3 Static Website
 
+# on:
+#   push:
+#     branches:
+#       - main
+
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch: # Allows manual execution from the GitHub Actions UI
 
 jobs:
   deploy:
